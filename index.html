@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="robots" content="noindex">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Invoice reminder</title>
+<style>
+:root{
+  --ink:#16202A; --muted:#5B6873; --line:#D9DFE4; --panel:#FFFFFF; --bg:#EEF1F3;
+  --slate:#1E4D6B; --slate-ink:#FFFFFF; --stamp:#B3261E; --field:#F6F8F9; --ok:#1F6B45;
+  box-sizing:border-box; padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+  color-scheme:light dark;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --ink:#E7ECEF; --muted:#9AA7B1; --line:#2C3945; --panel:#18222B; --bg:#0F171E;
+  --slate:#6FA3C7; --slate-ink:#0F171E; --stamp:#E5776E; --field:#1F2B35; --ok:#6BC49A; } }
+:root[data-theme="dark"]{
+  --ink:#E7ECEF; --muted:#9AA7B1; --line:#2C3945; --panel:#18222B; --bg:#0F171E;
+  --slate:#6FA3C7; --slate-ink:#0F171E; --stamp:#E5776E; --field:#1F2B35; --ok:#6BC49A; }
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0; background:var(--bg); color:var(--ink);
+  font:15px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Helvetica,Arial,sans-serif;}
+.wrap{display:grid; grid-template-columns:minmax(300px,380px) 1fr; min-height:100vh}
+aside{background:var(--panel); border-right:1px solid var(--line); padding:28px 24px 40px}
+h1{font-size:22px; font-weight:650; letter-spacing:-0.01em; margin:0 0 4px}
+.sub{color:var(--muted); margin:0 0 22px; font-size:14px}
+.drop{display:block; border:2px dashed var(--line); border-radius:12px; padding:26px 18px; text-align:center; cursor:pointer;
+  transition:border-color .15s, background .15s; background:var(--field)}
+.drop:hover,.drop.over{border-color:var(--slate)}
+.drop:focus-within{outline:2px solid var(--slate); outline-offset:2px}
+.drop strong{display:block; font-size:16px; margin-bottom:2px}
+.drop span{color:var(--muted); font-size:13px}
+.drop.loaded{padding:14px 16px; text-align:left}
+.drop input{position:absolute; opacity:0; width:1px; height:1px}
+.err{color:var(--stamp); font-size:14px; margin:10px 0 0}
+fieldset{border:0; margin:24px 0 0; padding:0}
+legend{font-size:13px; font-weight:600; color:var(--muted); padding:0; margin-bottom:8px}
+.grid{display:grid; grid-template-columns:1fr 1fr; gap:10px}
+.grid .full{grid-column:1/-1}
+label.f{display:flex; flex-direction:column; gap:4px; font-size:13px; color:var(--muted)}
+input[type=text],input[type=email]{font:inherit; font-size:15px; color:var(--ink); background:var(--field);
+  border:1px solid var(--line); border-radius:8px; padding:8px 10px; width:100%; min-width:0}
+input:focus-visible,button:focus-visible{outline:2px solid var(--slate); outline-offset:1px}
+.balance{display:flex; justify-content:space-between; align-items:baseline; margin-top:10px; padding-top:10px; border-top:1px solid var(--line); font-weight:600}
+.seg{display:flex; background:var(--field); border:1px solid var(--line); border-radius:9px; padding:3px; gap:3px}
+.seg label{flex:1; text-align:center; font-size:13px; padding:7px 6px; border-radius:6px; cursor:pointer; color:var(--muted)}
+.seg input{position:absolute; opacity:0}
+.seg input:checked+span{color:var(--ink); font-weight:600}
+.seg label:has(input:checked){background:var(--panel); box-shadow:0 0 0 1px var(--line)}
+.seg label:has(input:focus-visible){outline:2px solid var(--slate)}
+details{margin-top:24px}
+summary{cursor:pointer; font-size:13px; font-weight:600; color:var(--muted)}
+details .grid{margin-top:10px}
+main{padding:24px 28px 48px; min-width:0}
+.bar{position:sticky; top:env(safe-area-inset-top,0px); z-index:2; background:var(--bg); padding:4px 0 16px;
+  display:flex; flex-wrap:wrap; gap:10px 14px; align-items:center; max-width:640px; margin:0 auto}
+.meta{flex:1 1 260px; min-width:0; display:grid; grid-template-columns:auto 1fr auto; gap:4px 10px; align-items:center; font-size:14px}
+.meta dt{color:var(--muted)}
+.meta dd{margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.link{font:inherit; font-size:13px; background:none; border:0; color:var(--slate); cursor:pointer; padding:2px 4px; border-radius:4px}
+.primary{font:inherit; font-weight:600; font-size:15px; background:var(--slate); color:var(--slate-ink); border:0; border-radius:9px; padding:11px 18px; cursor:pointer}
+.ghost{font:inherit; font-size:14px; background:transparent; color:var(--ink); border:1px solid var(--line); border-radius:9px; padding:10px 14px; cursor:pointer}
+button:disabled{opacity:.45; cursor:default}
+.actions{display:flex; gap:8px}
+.preview{max-width:640px; margin:0 auto; border-radius:12px; overflow:hidden; border:1px solid var(--line)}
+.empty{max-width:640px; margin:60px auto; text-align:center; color:var(--muted)}
+.toast{position:fixed; left:50%; bottom:calc(24px + env(safe-area-inset-bottom,0px)); transform:translate(-50%,20px); opacity:0;
+  background:var(--ink); color:var(--panel); padding:10px 16px; border-radius:10px; font-size:14px; transition:.2s; pointer-events:none; max-width:calc(100% - 32px)}
+.toast.show{opacity:1; transform:translate(-50%,0)}
+@media (max-width:860px){ .wrap{grid-template-columns:1fr} aside{border-right:0; border-bottom:1px solid var(--line); padding:20px 16px 28px} main{padding:16px 12px 40px} }
+@media (prefers-reduced-motion:reduce){ *{transition:none!important} }
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+<aside>
+  <h1>Invoice reminder</h1>
+  <p class="sub">Drop in an overdue Wave invoice to build a reminder email for Gmail.</p>
+
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept="application/pdf,.pdf">
+    <strong id="dropTitle">Drop a Wave invoice PDF</strong>
+    <span id="dropHint">or click to choose a file</span>
+  </label>
+  <p class="err" id="err" hidden></p>
+
+  <form id="form" hidden onsubmit="return false">
+    <fieldset>
+      <legend>Client</legend>
+      <div class="grid">
+        <label class="f full">Send to<input type="email" id="clientEmail"></label>
+        <label class="f full">Greeting name<input type="text" id="greet"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Invoice</legend>
+      <div class="grid">
+        <label class="f">Invoice number<input type="text" id="invoiceNumber"></label>
+        <label class="f">Invoice date<input type="text" id="invoiceDate"></label>
+        <label class="f">Due date<input type="text" id="dueDate"></label>
+        <label class="f">Project<input type="text" id="project"></label>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Payments</legend>
+      <div class="grid">
+        <label class="f full">Invoice total<input type="text" id="total" inputmode="decimal"></label>
+        <label class="f">Amount paid<input type="text" id="paid" inputmode="decimal"></label>
+        <label class="f">Last paid on<input type="text" id="paidDate"></label>
+      </div>
+      <div class="balance"><span>Balance due</span><span id="balance">—</span></div>
+    </fieldset>
+    <fieldset id="modeSet">
+      <legend>Overdue wording</legend>
+      <div class="seg" role="radiogroup">
+        <label><input type="radio" name="mode" value="count" checked><span id="modeCount">Day count</span></label>
+        <label><input type="radio" name="mode" value="since"><span id="modeSince">Since due date</span></label>
+      </div>
+    </fieldset>
+    <details>
+      <summary>Your details</summary>
+      <div class="grid">
+        <label class="f full">Name<input type="text" id="sName"></label>
+        <label class="f">Phone<input type="text" id="sPhone"></label>
+        <label class="f">Website<input type="text" id="sSite"></label>
+        <label class="f full">City<input type="text" id="sCity"></label>
+      </div>
+    </details>
+  </form>
+</aside>
+
+<main>
+  <div class="bar" id="bar" hidden>
+    <dl class="meta">
+      <dt>To</dt><dd id="toOut"></dd><button class="link" data-copy="to">Copy</button>
+      <dt>Subject</dt><dd id="subjOut"></dd><button class="link" data-copy="subject">Copy</button>
+    </dl>
+    <div class="actions">
+      <button class="ghost" id="dl" hidden>Download HTML</button>
+      <button class="primary" id="copy">Copy for Gmail</button>
+    </div>
+  </div>
+  <div class="empty" id="empty">The email preview appears here once you add an invoice.</div>
+  <div class="preview" id="preview" hidden></div>
+</main>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+// Reads a Wave invoice PDF into plain fields. Works with pdf.js 3.x.
+async function extractLines(pdfjsLib, data) {
+  const pdf = await pdfjsLib.getDocument({ data }).promise;
+  const lines = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const tc = await page.getTextContent();
+    const items = tc.items
+      .filter(it => it.str && it.str.trim())
+      .map(it => ({ s: it.str, x: it.transform[4], y: it.transform[5], w: it.width }));
+    items.sort((a, b) => b.y - a.y || a.x - b.x);
+    const rows = [];
+    for (const it of items) {
+      const row = rows.find(r => Math.abs(r.y - it.y) < 3);
+      if (row) row.items.push(it); else rows.push({ y: it.y, items: [it] });
+    }
+    rows.sort((a, b) => b.y - a.y);
+    for (const r of rows) {
+      r.items.sort((a, b) => a.x - b.x);
+      // split a visual line into segments where there's a wide horizontal gap
+      const segs = [];
+      let cur = null, end = 0;
+      for (const it of r.items) {
+        if (cur && it.x - end < 20) cur.push(it.s);
+        else { cur = [it.s]; segs.push(cur); }
+        end = it.x + it.w;
+      }
+      lines.push({ page: p, segs: segs.map(s => s.join(' ').replace(/\s+/g, ' ').trim()) });
+    }
+  }
+  return lines;
+}
+
+function parseWave(lines) {
+  const text = lines.map(l => l.segs.join(' ¦ ')).join('\n');
+  const sep = '[\\s¦]*';
+  const DATE = '([A-Z][a-z]+\\.? \\d{1,2}, \\d{4})';
+  const MONEY = '(-?[^\\d\\s¦-]{0,3}-?[\\d,]+\\.\\d{2})';
+  const grab = re => { const m = text.match(re); return m ? m[1].trim() : ''; };
+
+  const out = {};
+  out.invoiceNumber = grab(new RegExp('Invoice Number:' + sep + '([^\\s¦]+)'));
+  out.invoiceDate = grab(new RegExp('Invoice Date:' + sep + DATE));
+  out.dueDate = grab(new RegExp('Payment Due:' + sep + DATE));
+  const cur = text.match(/Amount Due \(([A-Z]{3})\)/);
+  out.currency = cur ? cur[1] : 'USD';
+  out.amountDue = grab(new RegExp('Amount Due \\([A-Z]{3}\\):' + sep + MONEY));
+  out.total = grab(new RegExp('(?:^|[\\s¦])Total:' + sep + MONEY, 'm')) || out.amountDue;
+
+  out.payments = [];
+  const payRe = new RegExp('Payment on ' + DATE + '[^\\n:]*:' + sep + MONEY, 'g');
+  let m;
+  while ((m = payRe.exec(text))) out.payments.push({ date: m[1], amount: m[2] });
+
+  // Bill-to block: first segment of the lines after "BILL TO", up to the items header
+  const bi = lines.findIndex(l => /^BILL TO$/i.test(l.segs[0] || ''));
+  out.clientName = ''; out.clientEmail = '';
+  if (bi >= 0) {
+    for (let i = bi + 1; i < lines.length && i < bi + 14; i++) {
+      const first = lines[i].segs[0] || '';
+      if (/^Items$/i.test(first)) break;
+      if (!out.clientName && first) out.clientName = first;
+      const em = first.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+      if (em && !out.clientEmail) out.clientEmail = em[0];
+    }
+  }
+
+  // Sender header: lines after the first "INVOICE"
+  const hi = lines.findIndex(l => l.segs.some(s => /^INVOICE$/.test(s)));
+  out.senderName = ''; out.senderPhone = ''; out.senderCity = '';
+  if (hi >= 0) {
+    for (let i = hi + 1; i < lines.length && i < hi + 8; i++) {
+      const s = lines[i].segs[lines[i].segs.length - 1];
+      if (/BILL TO/i.test(lines[i].segs[0])) break;
+      if (!out.senderName) { out.senderName = s; continue; }
+      const digits = s.replace(/\D/g, '');
+      if (!out.senderPhone && /^[\d\s()+.-]+$/.test(s) && digits.length >= 10) out.senderPhone = s;
+      const city = s.match(/^([A-Za-z .'-]+,\s*[A-Za-z .'-]+?)\s+\d{5}(-\d{4})?$/);
+      if (!out.senderCity && city) out.senderCity = city[1];
+    }
+  }
+
+  // Notes / Terms: the line after the heading
+  const ni = lines.findIndex(l => /^Notes \/ Terms$/i.test(l.segs[0] || ''));
+  out.notes = ni >= 0 && lines[ni + 1] ? (lines[ni + 1].segs[0] || '') : '';
+  if (/^Page \d+ of/i.test(out.notes)) out.notes = '';
+  return out;
+}
+
+
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const SENDER_KEY = "invoice-reminder-sender";
+const DEFAULT_SENDER = { sName:"Yuki Asahina", sPhone:"(954) 260-9567", sSite:"asahina.me", sCity:"Concord, California" };
+let state = { currency:"USD", paymentCount:0 };
+
+function loadSender(){ try{ return {...DEFAULT_SENDER, ...JSON.parse(localStorage.getItem(SENDER_KEY)||"{}")}; }catch{ return {...DEFAULT_SENDER}; } }
+function saveSender(){ try{ localStorage.setItem(SENDER_KEY, JSON.stringify(Object.fromEntries(["sName","sPhone","sSite","sCity"].map(k=>[k,$(k).value])))); }catch{} }
+function fmtPhone(p){ const d=p.replace(/\D/g,""); if(d.length===10) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`; if(d.length===11&&d[0]==="1") return `(${d.slice(1,4)}) ${d.slice(4,7)}-${d.slice(7)}`; return p; }
+const num = s => { const n = parseFloat(String(s).replace(/[^\d.-]/g,"")); return isNaN(n) ? 0 : n; };
+const money = n => { try{ return new Intl.NumberFormat("en-US",{style:"currency",currency:state.currency}).format(n); }catch{ return "$"+n.toFixed(2); } };
+const pDate = s => { const d = new Date(String(s).replace(/\./g,"")); return isNaN(d) ? null : d; };
+const longD = d => d.toLocaleDateString("en-US",{month:"long",day:"numeric",year:"numeric"});
+const shortD = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+
+function model(){
+  const v = id => $(id).value.trim();
+  const total = num(v("total")), paid = num(v("paid"));
+  const due = pDate(v("dueDate"));
+  const today = new Date(); today.setHours(0,0,0,0);
+  let days = null;
+  if (due){ const d0 = new Date(due); d0.setHours(0,0,0,0); days = Math.round((today - d0)/86400000); }
+  return { to:v("clientEmail"), greet:v("greet"), n:v("invoiceNumber"), invDate:v("invoiceDate"), due, dueRaw:v("dueDate"),
+    project:v("project"), total, paid, paidDate:pDate(v("paidDate")), balance:Math.max(0,+(total-paid).toFixed(2)), days,
+    mode:document.querySelector("input[name=mode]:checked").value, count:state.paymentCount,
+    sName:v("sName"), sPhone:v("sPhone"), sSite:v("sSite"), sCity:v("sCity") };
+}
+
+function copyText(m){
+  const partial = m.paid > 0, bal = money(m.balance), n = m.n;
+  const dueL = m.due ? longD(m.due) : m.dueRaw, dueS = m.due ? shortD(m.due) : m.dueRaw;
+  const thanks = !partial ? "" : (m.count > 1 ? `Thank you for your payments totaling ${money(m.paid)}. ` :
+    `Thank you for your payment of ${money(m.paid)}${m.paidDate ? " on " + m.paidDate.toLocaleDateString("en-US",{month:"long",day:"numeric"}) : ""}. `);
+  const subjectOf = partial ? `remaining balance of ${bal}` : `for ${bal}`;
+  let stage, intro, subject, pill, colors;
+  const d = m.days;
+  if (d !== null && d > 0){
+    stage = "overdue";
+    const tail = m.mode === "count" ? `is now ${d} day${d===1?"":"s"} past due` : "is still outstanding";
+    intro = partial ? `${thanks}The remaining balance on invoice #${n} was due on ${dueL} and ${tail}.`
+                    : `This is a reminder that invoice #${n} for ${bal} was due on ${dueL} and ${tail}.`;
+    pill = m.mode === "count" ? `${d} day${d===1?"":"s"} overdue` : `Past due since ${dueS}`;
+    colors = ["#FCE8E6","#A12A1F"];
+    subject = `Overdue: Invoice #${n} ${subjectOf}`;
+  } else if (d === 0){
+    stage = "today";
+    intro = partial ? `${thanks}The remaining balance on invoice #${n} is due today.` : `This is a reminder that invoice #${n} for ${bal} is due today.`;
+    pill = "Due today"; colors = ["#FFF4DB","#8A5A00"];
+    subject = `Invoice #${n} is due today`;
+  } else {
+    stage = "upcoming";
+    intro = partial ? `${thanks}The remaining balance on invoice #${n} is due on ${dueL}.` : `Just a friendly reminder that invoice #${n} for ${bal} is due on ${dueL}.`;
+    pill = `Due ${dueS}`; colors = ["#E6EEF3","#1E4D6B"];
+    subject = `Reminder: Invoice #${n} due ${dueS}`;
+  }
+  const closing = partial ? "If you've already sent the remaining balance, thank you, and please disregard this email."
+                          : "If you've already sent payment, thank you, and please disregard this email.";
+  const paidLabel = m.count > 1 ? "Payments received" : (m.paidDate ? `Paid ${shortD(m.paidDate)}` : "Paid");
+  return { stage, intro, subject, pill, colors, closing, paidLabel, partial, bal, dueL };
+}
+
+const F = "font-family:Helvetica, Arial, sans-serif;";
+function row(label, value, opts={}){
+  const b = opts.last ? " border-bottom:1px solid #E3E8EC;" : "";
+  const top = opts.strong ? "border-top:2px solid #1C2833;" : "border-top:1px solid #E3E8EC;";
+  const w = opts.strong ? " font-weight:bold; color:#1C2833;" : "";
+  return `<tr><td style="padding:10px 0; ${top}${b} color:${opts.strong?"#1C2833":"#4A5864"};${w}">${esc(label)}</td><td align="right" style="padding:10px 0; ${top}${b} color:#1C2833;${w}">${esc(value)}</td></tr>`;
+}
+
+function buildEmail(m, t){
+  const rows = [row("Invoice number", "#"+m.n), row("Invoice date", m.invDate), row("Due date", t.dueL)];
+  if (m.project) rows.push(row("Project", m.project));
+  if (t.partial){ rows.push(row("Invoice total", money(m.total))); rows.push(row(t.paidLabel, "\u2212"+money(m.paid))); rows.push(row("Balance due", t.bal, {strong:true,last:true})); }
+  else rows.push(row("Amount due", t.bal, {strong:true,last:true}));
+  const stamp = t.stage !== "overdue" ? "" : `
+<tr><td align="center" style="padding:36px 28px 12px 28px;">
+<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="transform:rotate(-8deg); -webkit-transform:rotate(-8deg);"><tr>
+<td style="border:3px solid #B3261E; border-radius:8px; padding:3px;"><table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>
+<td style="border:1px solid #B3261E; border-radius:5px; padding:10px 26px; font-family:'Arial Black', Arial, Helvetica, sans-serif; font-size:30px; line-height:34px; font-weight:900; letter-spacing:4px; color:#B3261E;">OVERDUE</td>
+</tr></table></td></tr></table></td></tr>`;
+  const footer = [m.sName, m.sPhone].filter(Boolean).map(esc);
+  if (m.sSite){ const href = /^https?:\/\//.test(m.sSite) ? m.sSite : "https://"+m.sSite; footer.push(`<a href="${esc(href)}" style="color:#7A8792;">${esc(m.sSite.replace(/^https?:\/\//,""))}</a>`); }
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#EEF1F3;"><tr><td align="center" style="padding:24px 12px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%; max-width:600px;">
+<tr><td align="center" style="padding:0 0 20px 0; font-family:-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size:20px; font-weight:600; letter-spacing:0.5px; color:#1C2833;">${esc(m.sName)}</td></tr>
+<tr><td style="background-color:#FFFFFF; border-radius:10px; border-top:4px solid #1E4D6B;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+<tr><td style="padding:32px 28px 8px 28px; ${F} font-size:16px; line-height:24px; color:#1C2833;">
+<p style="margin:0 0 12px 0;">Hi ${esc(m.greet)},</p>
+<p style="margin:0; color:#4A5864;">${esc(t.intro)}</p></td></tr>
+<tr><td align="center" style="padding:28px 28px 8px 28px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#F6F8F9; border-radius:8px;">
+<tr><td align="center" style="padding:28px 20px 6px 20px; ${F} font-size:14px; color:#4A5864;">${t.partial ? "Remaining balance" : "Amount due"}</td></tr>
+<tr><td align="center" style="padding:0 20px 14px 20px; font-family:Georgia, 'Times New Roman', serif; font-size:40px; line-height:46px; color:#1C2833;">${esc(t.bal)}</td></tr>
+<tr><td align="center" style="padding:0 20px 28px 20px;"><span style="display:inline-block; padding:6px 14px; border-radius:999px; background-color:${t.colors[0]}; color:${t.colors[1]}; ${F} font-size:13px; font-weight:bold;">${esc(t.pill)}</span></td></tr>
+</table></td></tr>${stamp}
+<tr><td style="padding:28px 28px 8px 28px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="${F} font-size:14px; line-height:20px;">
+${rows.join("\n")}
+</table></td></tr>
+<tr><td style="padding:24px 28px 32px 28px; ${F} font-size:15px; line-height:23px; color:#4A5864;">
+<p style="margin:0 0 16px 0;">${esc(t.closing)}</p>
+<p style="margin:0; color:#1C2833;">Thanks,<br>${esc((m.sName||"").split(" ")[0])}</p></td></tr>
+</table></td></tr>
+<tr><td align="center" style="padding:24px 20px 0 20px; ${F} font-size:12px; line-height:18px; color:#7A8792;">${footer.join(" &nbsp;|&nbsp; ")}${m.sCity ? "<br>"+esc(m.sCity) : ""}</td></tr>
+</table></td></tr></table>`;
+}
+
+function buildPlain(m, t){
+  const lines = [`Hi ${m.greet},`, "", t.intro, "", `${t.partial?"Remaining balance":"Amount due"}: ${t.bal} (${t.pill})`, "",
+    `Invoice number: #${m.n}`, `Invoice date: ${m.invDate}`, `Due date: ${t.dueL}`];
+  if (m.project) lines.push(`Project: ${m.project}`);
+  if (t.partial) lines.push(`Invoice total: ${money(m.total)}`, `${t.paidLabel}: -${money(m.paid)}`, `Balance due: ${t.bal}`);
+  lines.push("", t.closing, "", "Thanks,", (m.sName||"").split(" ")[0], "", [m.sName,m.sPhone,m.sSite].filter(Boolean).join(" | "), m.sCity);
+  return lines.join("\n").trim();
+}
+
+let current = null;
+function render(){
+  const m = model(), t = copyText(m);
+  $("balance").textContent = money(m.balance);
+  $("modeSet").hidden = t.stage !== "overdue";
+  if (m.days > 0){ $("modeCount").textContent = `${m.days} day${m.days===1?"":"s"} overdue`; $("modeSince").textContent = `Past due since ${shortD(m.due)}`; }
+  $("toOut").textContent = m.to || "—"; $("subjOut").textContent = t.subject; $("subjOut").title = t.subject;
+  const html = buildEmail(m, t);
+  $("preview").innerHTML = html;
+  current = { m, t, html, plain: buildPlain(m, t) };
+}
+
+function toast(msg){ const el=$("toast"); el.textContent=msg; el.classList.add("show"); clearTimeout(toast.t); toast.t=setTimeout(()=>el.classList.remove("show"),2600); }
+
+async function writeClipboard(html, plain){
+  try{
+    if (!html) { await navigator.clipboard.writeText(plain); return true; }
+    await navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([html],{type:"text/html"}),"text/plain":new Blob([plain],{type:"text/plain"})})]);
+    return true;
+  }catch(e){
+    try{
+      let node;
+      if (html){ node = $("preview"); }
+      else { node = document.createElement("textarea"); node.value = plain; node.style.cssText="position:fixed;opacity:0"; document.body.appendChild(node); node.select(); }
+      if (html){ const r=document.createRange(); r.selectNodeContents(node); const s=getSelection(); s.removeAllRanges(); s.addRange(r); }
+      const ok = document.execCommand("copy");
+      getSelection().removeAllRanges(); if (!html) node.remove();
+      return ok;
+    }catch{ return false; }
+  }
+}
+
+$("copy").onclick = async () => {
+  const ok = await writeClipboard(`<div>${current.html}</div>`, current.plain);
+  toast(ok ? "Copied. Paste into a new Gmail message with Cmd+V." : "Copy was blocked. Select the preview and copy it manually.");
+};
+document.querySelectorAll("[data-copy]").forEach(b => b.onclick = async () => {
+  const val = b.dataset.copy === "to" ? current.m.to : current.t.subject;
+  const ok = await writeClipboard(null, val);
+  toast(ok ? (b.dataset.copy === "to" ? "Address copied" : "Subject copied") : "Copy was blocked");
+});
+
+let downloads = null;
+$("dl").hidden = false;
+$("dl").onclick = async () => {
+  const doc = `<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>${esc(current.t.subject)}</title></head>\n<body style="margin:0; padding:0; background-color:#EEF1F3;">\n${current.html}\n</body></html>`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([doc], {type:"text/html"}));
+  a.download = `invoice-${(current.m.n||"reminder").replace(/[^\w-]/g,"")}-reminder.html`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  toast("Downloaded");
+};
+
+async function handleFile(file){
+  $("err").hidden = true;
+  if (!file || !/pdf$/i.test(file.type || file.name)) { showErr("That file isn't a PDF. Choose the invoice PDF you downloaded from Wave."); return; }
+  $("dropTitle").textContent = "Reading…"; $("dropHint").textContent = file.name;
+  try{
+    const lines = await extractLines(pdfjsLib, new Uint8Array(await file.arrayBuffer()));
+    const d = parseWave(lines);
+    if (!d.invoiceNumber && !d.amountDue) throw new Error("nofields");
+    state.currency = d.currency || "USD";
+    state.paymentCount = d.payments.length;
+    const paid = d.payments.reduce((s,p)=>s+num(p.amount),0);
+    const set = (id, val) => $(id).value = val ?? "";
+    set("clientEmail", d.clientEmail); set("greet", (d.clientName||"").split(" ")[0]);
+    set("invoiceNumber", d.invoiceNumber); set("invoiceDate", d.invoiceDate); set("dueDate", d.dueDate);
+    set("project", d.notes);
+    set("total", num(d.total).toFixed(2)); set("paid", paid ? paid.toFixed(2) : "0.00");
+    set("paidDate", d.payments.length ? d.payments[d.payments.length-1].date : "");
+    const s = loadSender();
+    set("sName", d.senderName || s.sName); set("sPhone", d.senderPhone ? fmtPhone(d.senderPhone) : s.sPhone);
+    set("sSite", s.sSite); set("sCity", d.senderCity || s.sCity);
+    $("form").hidden = false; $("bar").hidden = false; $("preview").hidden = false; $("empty").hidden = true;
+    $("drop").classList.add("loaded"); $("dropTitle").textContent = `Invoice #${d.invoiceNumber || "?"}`; $("dropHint").textContent = `${file.name}. Drop another PDF to replace it.`;
+    const missing = [["due date","dueDate"],["client email","clientEmail"],["total","total"]].filter(([,id])=>!$(id).value || $(id).value==="0.00").map(([n])=>n);
+    if (missing.length) showErr(`Couldn't find the ${missing.join(", ")} in this PDF. Fill ${missing.length>1?"them":"it"} in below.`);
+    render();
+  }catch(e){
+    $("dropTitle").textContent = "Drop a Wave invoice PDF"; $("dropHint").textContent = "or click to choose a file";
+    showErr(e.message === "nofields" ? "This PDF doesn't look like a Wave invoice. No invoice number or amount due was found." : "Couldn't read this PDF. Try downloading the invoice from Wave again.");
+  }
+}
+function showErr(msg){ $("err").textContent = msg; $("err").hidden = false; }
+
+$("file").onchange = e => handleFile(e.target.files[0]);
+const drop = $("drop");
+["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => handleFile(e.dataTransfer.files[0]));
+window.addEventListener("dragover", e => e.preventDefault()); window.addEventListener("drop", e => e.preventDefault());
+$("form").addEventListener("input", e => { if (e.target.id?.startsWith("s")) saveSender(); render(); });
+</script>
+</body>
+</html>
