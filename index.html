@@ -34,6 +34,20 @@ h1{font-size:22px; font-weight:650; letter-spacing:-0.01em; margin:0 0 4px}
 .drop span{color:var(--muted); font-size:13px}
 .drop.loaded{padding:14px 16px; text-align:left}
 .drop input{position:absolute; opacity:0; width:1px; height:1px}
+body.is-empty .wrap{display:none}
+body:not(.is-empty) .hero{display:none}
+.hero{min-height:100vh; display:grid; place-items:center; padding:32px 20px}
+.hero-inner{width:min(620px,100%); text-align:center}
+.hero h1{font-size:30px; margin-bottom:6px}
+.hero .sub{font-size:16px; margin-bottom:28px}
+.drop.big{padding:88px 24px; border-width:2.5px; border-radius:18px; border-color:color-mix(in srgb, var(--slate) 35%, var(--line))}
+.drop.big strong{font-size:22px; margin-bottom:6px}
+.drop.big span{font-size:15px}
+.drop-icon{display:block; width:48px; height:48px; margin:0 auto 18px; color:var(--slate)}
+.hero .err{text-align:center}
+.drag-overlay{position:fixed; inset:12px; z-index:20; display:none; place-items:center; border:3px dashed var(--slate); border-radius:18px;
+  background:color-mix(in srgb, var(--bg) 88%, transparent); font-size:22px; font-weight:600; color:var(--slate); pointer-events:none}
+.drag-overlay.show{display:grid}
 .err{color:var(--stamp); font-size:14px; margin:10px 0 0}
 fieldset{border:0; margin:24px 0 0; padding:0}
 legend{font-size:13px; font-weight:600; color:var(--muted); padding:0; margin-bottom:8px}
@@ -75,7 +89,21 @@ button:disabled{opacity:.45; cursor:default}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
 </head>
-<body>
+<body class="is-empty">
+<section class="hero">
+  <div class="hero-inner">
+    <h1>Invoice reminder</h1>
+    <p class="sub">Drop in an overdue Wave invoice to build a reminder email for Gmail.</p>
+    <label class="drop big" id="heroDrop">
+      <input type="file" id="heroFile" accept="application/pdf,.pdf">
+      <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 11v6"/><path d="m9 14 3 3 3-3"/></svg>
+      <strong id="heroTitle">Drop a Wave invoice PDF</strong>
+      <span>anywhere on this page, or click to choose a file</span>
+    </label>
+    <p class="err" id="heroErr" hidden></p>
+  </div>
+</section>
+<div class="drag-overlay" id="dragOverlay">Drop to load the invoice</div>
 <div class="wrap">
 <aside>
   <h1>Invoice reminder</h1>
@@ -414,7 +442,7 @@ $("dl").onclick = async () => {
 };
 
 async function handleFile(file){
-  $("err").hidden = true;
+  $("err").hidden = true; $("heroErr").hidden = true; $("heroTitle").textContent = "Reading…";
   if (!file || !/pdf$/i.test(file.type || file.name)) { showErr("That file isn't a PDF. Choose the invoice PDF you downloaded from Wave."); return; }
   $("dropTitle").textContent = "Reading…"; $("dropHint").textContent = file.name;
   try{
@@ -433,24 +461,34 @@ async function handleFile(file){
     const s = loadSender();
     set("sName", d.senderName || s.sName); set("sPhone", d.senderPhone ? fmtPhone(d.senderPhone) : s.sPhone);
     set("sSite", s.sSite); set("sCity", d.senderCity || s.sCity);
+    document.body.classList.remove("is-empty");
     $("form").hidden = false; $("bar").hidden = false; $("preview").hidden = false; $("empty").hidden = true;
     $("drop").classList.add("loaded"); $("dropTitle").textContent = `Invoice #${d.invoiceNumber || "?"}`; $("dropHint").textContent = `${file.name}. Drop another PDF to replace it.`;
     const missing = [["due date","dueDate"],["client email","clientEmail"],["total","total"]].filter(([,id])=>!$(id).value || $(id).value==="0.00").map(([n])=>n);
     if (missing.length) showErr(`Couldn't find the ${missing.join(", ")} in this PDF. Fill ${missing.length>1?"them":"it"} in below.`);
     render();
   }catch(e){
-    $("dropTitle").textContent = "Drop a Wave invoice PDF"; $("dropHint").textContent = "or click to choose a file";
+    $("dropTitle").textContent = "Drop a Wave invoice PDF"; $("dropHint").textContent = "or click to choose a file"; $("heroTitle").textContent = "Drop a Wave invoice PDF";
     showErr(e.message === "nofields" ? "This PDF doesn't look like a Wave invoice. No invoice number or amount due was found." : "Couldn't read this PDF. Try downloading the invoice from Wave again.");
   }
 }
-function showErr(msg){ $("err").textContent = msg; $("err").hidden = false; }
+function showErr(msg){ for (const id of ["err","heroErr"]) { $(id).textContent = msg; $(id).hidden = false; } }
 
 $("file").onchange = e => handleFile(e.target.files[0]);
+$("heroFile").onchange = e => handleFile(e.target.files[0]);
 const drop = $("drop");
 ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
 ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
-drop.addEventListener("drop", e => handleFile(e.dataTransfer.files[0]));
-window.addEventListener("dragover", e => e.preventDefault()); window.addEventListener("drop", e => e.preventDefault());
+// Drop a file anywhere on the page
+let dragDepth = 0;
+const hasFiles = e => [...(e.dataTransfer?.types || [])].includes("Files");
+window.addEventListener("dragenter", e => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $("dragOverlay").classList.add("show"); });
+window.addEventListener("dragover", e => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("dragleave", e => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("dragOverlay").classList.remove("show"); });
+window.addEventListener("drop", e => {
+  e.preventDefault(); dragDepth = 0; $("dragOverlay").classList.remove("show");
+  if (e.dataTransfer?.files?.length) handleFile(e.dataTransfer.files[0]);
+});
 $("form").addEventListener("input", e => { if (e.target.id?.startsWith("s")) saveSender(); render(); });
 </script>
 </body>
